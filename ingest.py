@@ -1,6 +1,6 @@
 import os
 from langchain_community.document_loaders import PyPDFDirectoryLoader
-from langchain_text_splitters import TokenTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 
@@ -20,16 +20,19 @@ def build_ingestion_pipeline(pdf_folder: str, chroma_persist_dir: str):
     print(f"Successfully loaded {len(documents)} pages.")
 
     # --- 2. CHUNK ---
-    print("Chunking text...")
-    # TokenTextSplitter ensures chunks are measured by tokens, not just characters.
-    # 800 tokens with a 100 token overlap hits your 400-900 token / 10-20% overlap target.
-    text_splitter = TokenTextSplitter(
-        chunk_size=800,
-        chunk_overlap=100,
-        disallowed_special=()  # <--- Add this line to bypass the error
+    print("Chunking text with context awareness...")
+    
+    # RecursiveCharacterTextSplitter uses a hierarchy of separators to keep thoughts together.
+    # It tries to split by double newlines (paragraphs) first. 
+    # If a paragraph is still too big, it tries single newlines, then periods, then spaces.
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,     # Note: This is measured in characters now, not tokens!
+        chunk_overlap=200,   # A 200-character overlap (roughly 1-2 sentences)
+        separators=["\n\n", "\n", "(?<=\. )", " ", ""]
     )
+    
     chunks = text_splitter.split_documents(documents)
-    print(f"Split text into {len(chunks)} manageable chunks.")
+    print(f"Split text into {len(chunks)} context-aware chunks.")
 
     # --- 3. EMBED & STORE ---
     print("Initializing local embedding model...")
