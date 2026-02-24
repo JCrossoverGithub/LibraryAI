@@ -35,14 +35,17 @@ def start_chat_pipeline(chroma_dir: str):
         template=prompt_template, input_variables=["context", "question"]
     )
 
-    # 4. Build the RAG Chain
-    # This automatically handles fetching the top 3 chunks and feeding them into the prompt.
+# 4. Build the RAG Chain
     print("Building RAG chain...")
     qa_chain = RetrievalQA.from_chain_type(
         llm=llm,
-        chain_type="stuff", # "Stuff" simply means stuffing the text chunks into the prompt
-        retriever=vector_db.as_retriever(search_kwargs={"k": 3}),
-        return_source_documents=True, # Forces the AI to cite its sources
+        chain_type="stuff",
+        # Update to MMR search type and add fetch_k
+        retriever=vector_db.as_retriever(
+            search_type="mmr", 
+            search_kwargs={"k": 3, "fetch_k": 10}
+        ),
+        return_source_documents=True,
         chain_type_kwargs={"prompt": PROMPT}
     )
 
