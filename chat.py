@@ -9,7 +9,7 @@ def start_chat_pipeline(chroma_dir: str):
     
     # 1. Reconnect to your database using the exact same embedding model
     print("Connecting to local database...")
-    embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    embedding_model = HuggingFaceEmbeddings(model_name="BAAI/bge-large-en-v1.5")
     vector_db = Chroma(
         persist_directory=chroma_dir,
         embedding_function=embedding_model
