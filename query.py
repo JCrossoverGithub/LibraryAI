@@ -6,7 +6,7 @@ def search_database(query: str, chroma_dir: str):
     
     # 1. Initialize the exact same embedding model used for ingestion
     # If you use a different model here, the math won't match and the search will fail!
-    embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    embedding_model = HuggingFaceEmbeddings(model_name="BAAI/bge-large-en-v1.5")
 
     # 2. Connect to your existing local Chroma database
     vector_db = Chroma(
