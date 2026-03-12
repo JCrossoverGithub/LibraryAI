@@ -55,13 +55,35 @@ def start_chat_pipeline(chroma_dir: str):
     # This keeps the chronological flow of the last 3 turns in RAM for the rephraser
     recent_chat_buffer = []
 
+    # The Chat Loop
     while True:
         user_input = input("\nAsk your library a question (or type 'exit'): ")
         
         if user_input.lower() == 'exit':
             print("Shutting down...")
             break
+
+        # ---------------------------------------------------------
+        # [NEW: The Command Router]
+        # ---------------------------------------------------------
+        if user_input.strip().lower().startswith("-info "):
+            # Extract the actual fact by slicing off the first 6 characters ("-info ")
+            fact_to_save = user_input[6:].strip()
             
+            # Save it directly to the memory database
+            # We add a special metadata tag "type": "explicit_fact" so you can identify it later
+            memory_db.add_texts(
+                texts=[f"User provided an explicit fact to remember: {fact_to_save}"],
+                metadatas=[{"role": "user", "type": "explicit_fact"}]
+            )
+            
+            print(f"[Memory Saved]: I will remember that: '{fact_to_save}'")
+            
+            # The 'continue' statement instantly skips the rest of the loop
+            # This bypasses the rephrase chain, the document search, and the LLM generation.
+            continue 
+        # ---------------------------------------------------------
+
         print("Thinking...\n")
         
         # Format the short-term buffer into a single string
