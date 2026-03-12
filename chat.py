@@ -67,11 +67,9 @@ def start_chat_pipeline(chroma_dir: str):
         # [NEW: The Command Router]
         # ---------------------------------------------------------
         if user_input.strip().lower().startswith("-info "):
-            # Extract the actual fact by slicing off the first 6 characters ("-info ")
             fact_to_save = user_input[6:].strip()
             
-            # Save it directly to the memory database
-            # We add a special metadata tag "type": "explicit_fact" so you can identify it later
+            # 1. Save to Long-Term Chroma Memory
             memory_db.add_texts(
                 texts=[f"User provided an explicit fact to remember: {fact_to_save}"],
                 metadatas=[{"role": "user", "type": "explicit_fact"}]
@@ -79,9 +77,13 @@ def start_chat_pipeline(chroma_dir: str):
             
             print(f"[Memory Saved]: I will remember that: '{fact_to_save}'")
             
-            # The 'continue' statement instantly skips the rest of the loop
-            # This bypasses the rephrase chain, the document search, and the LLM generation.
-            continue 
+            # 2. [THE FIX] Inject it into the Short-Term Buffer!
+            # This ensures the Rephraser immediately knows about the new fact.
+            recent_chat_buffer.append(f"User explicitly stated a fact: {fact_to_save}")
+            if len(recent_chat_buffer) > 6:
+                recent_chat_buffer = recent_chat_buffer[-6:]
+            
+            continue
         # ---------------------------------------------------------
 
         print("Thinking...\n")
