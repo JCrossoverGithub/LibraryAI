@@ -1,58 +1,58 @@
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.llms import Ollama
-from langchain_classic.chains import RetrievalQA
+from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
 
 def start_chat_pipeline(chroma_dir: str):
     """Connects the local DB to a local LLM to answer questions."""
     
-    # 1. Reconnect to your database using the exact same embedding model
     print("Connecting to local database...")
-    embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    # Updated to the new HuggingFaceEmbeddings class
+    embedding_model = HuggingFaceEmbeddings(
+        model_name="BAAI/bge-large-en-v1.5",
+        model_kwargs={'device': 'cuda'}
+    )
+    
+    # 1. Your existing document library (Updated to new Chroma class)
     vector_db = Chroma(
         persist_directory=chroma_dir,
         embedding_function=embedding_model
     )
 
-    # 2. Wake up your local AI
-    print("Initializing local Mistral model via Ollama...")
-    # This automatically connects to the Ollama server running on your machine
-    llm = Ollama(model="mistral")
+    # 2. Initialize the dedicated Memory Database
+    memory_db = Chroma(
+        collection_name="chat_memory",
+        persist_directory=chroma_dir,
+        embedding_function=embedding_model
+    )
+
+    print("Initializing qwen3-coder:30b model via Ollama...")
+    # Updated to the new OllamaLLM class
+    llm = OllamaLLM(model="qwen3-coder:30b")
 
     # 3. Create the System Prompt
-    # This dictates exactly how the AI should behave and format its answers.
-    prompt_template = """You are a highly intelligent library assistant. Use the provided context extracted from books to answer the user's question accurately. 
-    If you don't know the answer based strictly on the context, simply say "I cannot find the answer in the provided documents." Do not invent or hallucinate information.
+    prompt_template = """You are a highly intelligent AI library assistant. 
+    If you don't know the answer, simply say "I cannot find the answer." Do not invent or hallucinate information.
 
-    Context: {context}
+    Past Conversation Context:
+    {chat_history}
+
+    Library Context: 
+    {context}
 
     Question: {question}
 
     Helpful Answer:"""
     
-    PROMPT = PromptTemplate(
-        template=prompt_template, input_variables=["context", "question"]
-    )
+    PROMPT = PromptTemplate.from_template(prompt_template)
 
-# 4. Build the RAG Chain
-    print("Building RAG chain...")
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        # Update to MMR search type and add fetch_k
-        retriever=vector_db.as_retriever(
-            search_type="mmr", 
-            search_kwargs={"k": 3, "fetch_k": 10}
-        ),
-        return_source_documents=True,
-        chain_type_kwargs={"prompt": PROMPT}
-    )
+    # Combine the prompt and the LLM into a simple, modern chain
+    chain = PROMPT | llm
 
-    print("\n✅ AI is ready to chat! (Remember, local processing may take a moment to generate answers depending on your hardware.)")
+    print("\n✅ AI is ready to chat!")
     print("="*70)
 
-    # 5. The Chat Loop
+    # 4. The Chat Loop
     while True:
         user_input = input("\nAsk your library a question (or type 'exit'): ")
         
@@ -62,19 +62,42 @@ def start_chat_pipeline(chroma_dir: str):
             
         print("Thinking...\n")
         
-        # This single line executes the entire pipeline: Search DB -> Inject Context -> Generate Answer
-        response = qa_chain.invoke({"query": user_input})
+        # A. Fetch memory context
+        memory_docs = memory_db.similarity_search(user_input, k=2)
+        if memory_docs:
+            chat_history_str = "\n\n".join([doc.page_content for doc in memory_docs])
+        else:
+            chat_history_str = "No relevant past conversations found."
+
+        # B. Fetch library context manually (Replaces the rigid RetrievalQA chain)
+        library_docs = vector_db.similarity_search(user_input, k=3)
+        context_str = "\n\n".join([doc.page_content for doc in library_docs])
+
+        # C. Execute the chain with all variables
+        ai_answer = chain.invoke({
+            "question": user_input,
+            "context": context_str,
+            "chat_history": chat_history_str
+        })
         
         print("🤖 ANSWER:")
-        print(response['result'])
+        print(ai_answer)
         
         print("\n📚 SOURCES USED:")
-        # Loop through the exact chunks it read to formulate that answer
-        for doc in response['source_documents']:
-            source_file = doc.metadata.get('source', 'Unknown')
-            page_num = doc.metadata.get('page', 'Unknown')
-            print(f"- {source_file} (Page {page_num})")
+        if library_docs:
+            for doc in library_docs:
+                source_file = doc.metadata.get('source', 'Unknown')
+                page_num = doc.metadata.get('page', 'Unknown')
+                print(f"- {source_file} (Page {page_num})")
+        else:
+            print("- No documents retrieved.")
         print("-" * 70)
+
+        # D. Save the new interaction to the memory database
+        memory_db.add_texts(
+            texts=[f"User asked: {user_input}", f"AI answered: {ai_answer}"],
+            metadatas=[{"role": "user"}, {"role": "assistant"}]
+        )
 
 if __name__ == "__main__":
     CHROMA_DIRECTORY = "./chroma_db"
