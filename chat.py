@@ -1,7 +1,10 @@
+import os
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 def start_chat_pipeline(chroma_dir: str):
     print("Connecting to local database...")
@@ -10,13 +13,14 @@ def start_chat_pipeline(chroma_dir: str):
         model_kwargs={'device': 'cuda'}
     )
     
+    # The two databases: Library (PDFs) and Memory (Chats/Facts)
     vector_db = Chroma(persist_directory=chroma_dir, embedding_function=embedding_model)
     memory_db = Chroma(collection_name="chat_memory", persist_directory=chroma_dir, embedding_function=embedding_model)
 
     print("Initializing qwen3-coder:30b model via Ollama...")
     llm = OllamaLLM(model="qwen3-coder:30b")
 
-    # 1. The Reformulation Prompt
+    # 1. The Reformulation Prompt (Translates vague queries into precise searches)
     rephrase_template = """Given the following conversation and a follow-up question, rephrase the follow-up question to be a highly specific standalone search query. 
     
     CRITICAL INSTRUCTIONS:
@@ -33,7 +37,7 @@ def start_chat_pipeline(chroma_dir: str):
     REPHRASE_PROMPT = PromptTemplate.from_template(rephrase_template)
     rephrase_chain = REPHRASE_PROMPT | llm
 
-    # 2. The QA Prompt
+    # 2. The QA Prompt (Balances Library facts with explicit Memory facts)
     qa_template = """You are a highly intelligent AI assistant. 
     You have access to two equal sources of truth:
     1. Past Conversation Context (memories and facts the user explicitly told you).
@@ -55,12 +59,22 @@ def start_chat_pipeline(chroma_dir: str):
     QA_PROMPT = PromptTemplate.from_template(qa_template)
     qa_chain = QA_PROMPT | llm
 
+    # 3. CLI Welcome Menu
     print("\n✅ AI is ready to chat!")
-    print("Type '-info [fact]' to explicitly save a memory.")
-    print("Type '-facts' to view saved facts, or '-forget [keyword]' to delete one.")
-    print("Type '-strict [query]' for library-only, or '-chat [query]' for memory-only.")
-    print("Type '-clear' to wipe short-term RAM, or '-wipe' for total memory wipe.")
-    print("="*70)
+    print("--- Memory Commands ---")
+    print("  -info [fact]    : Save a personal fact")
+    print("  -facts          : List all saved facts")
+    print("  -forget [word]  : Delete facts containing a keyword")
+    print("--- Library Commands ---")
+    print("  -upload [path]  : Ingest a PDF into the library")
+    print("  -docs           : List all PDFs in the library")
+    print("  -remove [name]  : Delete a PDF from the library")
+    print("--- Chat Commands ---")
+    print("  -strict [query] : Search ONLY the library")
+    print("  -chat [query]   : Search ONLY past conversations")
+    print("  -clear          : Wipe short-term RAM")
+    print("  -wipe           : NUCLEAR wipe of all chat memory")
+    print("======================================================================")
 
     recent_chat_buffer = []
 
@@ -91,14 +105,12 @@ def start_chat_pipeline(chroma_dir: str):
 
         # 2. -facts : Read all explicit facts
         elif user_input.lower() == "-facts":
-            # Query chroma using the metadata filter
             all_facts = memory_db.get(where={"type": "explicit_fact"})
             print("\n🧠 [Explicit Facts Remembered]:")
             if not all_facts['documents']:
                 print("  - No facts saved yet.")
             else:
                 for doc in all_facts['documents']:
-                    # Strip the prefix for cleaner display
                     clean_doc = doc.replace("User provided an explicit fact to remember: ", "")
                     print(f"  - {clean_doc}")
             continue
@@ -109,7 +121,6 @@ def start_chat_pipeline(chroma_dir: str):
             all_facts = memory_db.get(where={"type": "explicit_fact"})
             ids_to_delete = []
             
-            # Find which fact contains the keyword
             for doc_id, doc_text in zip(all_facts['ids'], all_facts['documents']):
                 if keyword in doc_text.lower():
                     ids_to_delete.append(doc_id)
@@ -121,13 +132,80 @@ def start_chat_pipeline(chroma_dir: str):
                 print(f"⚠️ [Not Found]: No explicit facts found containing '{keyword}'.")
             continue
 
-        # 4. -clear : Wipe the short-term buffer
+        # 4. -upload : Ingest a new document on the fly
+        elif user_input.lower().startswith("-upload "):
+            file_path = user_input[8:].strip()
+            
+            if not os.path.exists(file_path):
+                print(f"❌ [Error]: Could not find file at '{file_path}'")
+                continue
+                
+            print(f"📖 [Reading]: Loading '{file_path}'...")
+            
+            try:
+                loader = PyPDFLoader(file_path)
+                raw_documents = loader.load()
+                
+                text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+                chunked_docs = text_splitter.split_documents(raw_documents)
+                
+                filename = os.path.basename(file_path)
+                for doc in chunked_docs:
+                    doc.metadata["document_name"] = filename
+                
+                print(f"✂️ [Chunking]: Split document into {len(chunked_docs)} readable pieces.")
+                print("🧠 [Embedding]: Saving to the library database. This might take a moment...")
+                
+                vector_db.add_documents(chunked_docs)
+                
+                print(f"✅ [Success]: '{filename}' has been memorized.")
+                recent_chat_buffer.append(f"System: User uploaded a new document: {filename}")
+                if len(recent_chat_buffer) > 6: 
+                    recent_chat_buffer = recent_chat_buffer[-6:]
+                    
+            except Exception as e:
+                print(f"❌ [Error]: Failed to process document. Details: {e}")
+            continue
+
+        # 5. -remove : Delete an uploaded document
+        elif user_input.lower().startswith("-remove "):
+            target_file = user_input[8:].strip()
+            existing_docs = vector_db.get(where={"document_name": target_file})
+            
+            if not existing_docs['ids']:
+                print(f"⚠️ [Not Found]: Could not find any document named '{target_file}' in the library.")
+            else:
+                chunk_count = len(existing_docs['ids'])
+                vector_db._collection.delete(where={"document_name": target_file})
+                print(f"🗑️ [Document Removed]: Deleted '{target_file}' ({chunk_count} chunks purged).")
+            continue
+
+        # 6. -docs : List all documents currently in the library
+        elif user_input.lower() == "-docs":
+            all_lib_docs = vector_db.get()
+            unique_docs = set()
+            
+            for meta in all_lib_docs['metadatas']:
+                if 'document_name' in meta:
+                    unique_docs.add(meta['document_name'])
+                elif 'source' in meta: 
+                    unique_docs.add(os.path.basename(meta['source']))
+                    
+            print("\n📚 [Library Documents]:")
+            if not unique_docs:
+                print("  - The library is empty.")
+            else:
+                for doc in sorted(unique_docs):
+                    print(f"  - {doc}")
+            continue
+
+        # 7. -clear : Wipe the short-term buffer
         elif user_input.lower() == "-clear":
             recent_chat_buffer.clear()
             print("🧹 [Buffer Cleared]: Short-term RAM wiped. The AI forgot the immediate conversation.")
             continue
 
-        # 5. -wipe : The Nuclear Option
+        # 8. -wipe : The Nuclear Option
         elif user_input.lower() == "-wipe":
             all_memories = memory_db.get()
             if all_memories['ids']:
@@ -144,13 +222,11 @@ def start_chat_pipeline(chroma_dir: str):
         use_memory = True
         query_text = user_input
 
-        # Force Library Only
         if user_input.lower().startswith("-strict "):
             use_memory = False
             query_text = user_input[8:].strip()
             print("📚 [Strict Mode]: Ignoring past conversations. Searching ONLY the library.")
             
-        # Force Memory Only
         elif user_input.lower().startswith("-chat "):
             use_library = False
             query_text = user_input[6:].strip()
@@ -164,7 +240,6 @@ def start_chat_pipeline(chroma_dir: str):
         
         recent_history_str = "\n".join(recent_chat_buffer) if recent_chat_buffer else "No recent conversation."
 
-        # The Reformulation Step uses `query_text` (without the command flags)
         standalone_query = rephrase_chain.invoke({
             "recent_history": recent_history_str,
             "question": query_text
@@ -172,14 +247,12 @@ def start_chat_pipeline(chroma_dir: str):
         
         print(f"🔍 [Debug - Searching DB for]: {standalone_query}\n")
 
-        # Memory Search Execution
         if use_memory:
             memory_docs = memory_db.similarity_search(standalone_query, k=2)
             chat_history_str = "\n\n".join([doc.page_content for doc in memory_docs]) if memory_docs else "No relevant past conversations found."
         else:
             chat_history_str = "Memory search disabled by user (-strict mode)."
 
-        # Library Search Execution
         if use_library:
             library_docs = vector_db.similarity_search(standalone_query, k=3)
             context_str = "\n\n".join([doc.page_content for doc in library_docs]) if library_docs else ""
@@ -187,7 +260,6 @@ def start_chat_pipeline(chroma_dir: str):
             library_docs = []
             context_str = "Library search disabled by user (-chat mode)."
 
-        # LLM Generation
         ai_answer = qa_chain.invoke({
             "question": standalone_query,
             "context": context_str,
@@ -200,7 +272,7 @@ def start_chat_pipeline(chroma_dir: str):
         print("\n📚 SOURCES USED:")
         if library_docs and use_library:
             for doc in library_docs:
-                source_file = doc.metadata.get('source', 'Unknown')
+                source_file = doc.metadata.get('source', doc.metadata.get('document_name', 'Unknown'))
                 page_num = doc.metadata.get('page', 'Unknown')
                 print(f"- {source_file} (Page {page_num})")
         elif use_library:
@@ -209,7 +281,6 @@ def start_chat_pipeline(chroma_dir: str):
             print("- Library ignored (-chat mode).")
         print("-" * 70)
 
-        # Update Databases (only save standard queries, not strict/chat specific ones)
         if use_library and use_memory:
             memory_db.add_texts(
                 texts=[f"User asked: {query_text}", f"AI answered: {ai_answer}"],
