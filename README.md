@@ -2,7 +2,7 @@
 
 **LibraryAI** is a local, retrieval-augmented AI assistant for interacting with a personal document library. It allows a user to upload documents, semantically search them, ask natural-language questions, and combine retrieved document context with lightweight conversational memory.
 
-The centerpiece of the project is **`chat.py`**, which turns the system into an interactive command-line assistant. Instead of being just a one-off PDF question-answering script, LibraryAI evolved into a more capable local assistant that supports:
+The centerpiece of the project is **`js_ai.py`**, which turns the system into an interactive command-line assistant. Instead of being just a one-off PDF question-answering script, LibraryAI evolved into a more capable local assistant that supports:
 
 - semantic search over a Chroma vector database
 - persistent long-term chat memory
@@ -41,7 +41,7 @@ The result is a stronger prototype for a real personal knowledge assistant: some
 
 LibraryAI uses a **local vector database** to store embedded chunks of documents and retrieve the most relevant passages for a user’s question.
 
-In `chat.py`, the assistant also maintains a separate memory collection for:
+In `js_ai.py`, the assistant also maintains a separate memory collection for:
 
 - facts the user explicitly asks it to remember
 - previous user queries
@@ -59,9 +59,9 @@ That makes the system a **hybrid of document retrieval + conversational memory**
 
 ---
 
-## Main file: `chat.py`
+## Main file: `js_ai.py`
 
-`chat.py` is the primary application entry point and the most important file in the project.
+`js_ai.py` is the primary application entry point and the most important file in the project.
 
 ### What it does
 
@@ -77,7 +77,7 @@ That makes the system a **hybrid of document retrieval + conversational memory**
 
 ### Current architecture
 
-The current `chat.py` uses:
+The current `js_ai.py` uses:
 
 - **Chroma** for vector storage
 - **HuggingFace embeddings**
@@ -155,4 +155,4 @@ The chat interface also supports listing, removing, and uploading documents.
 ## Example usage
 
 ```bash
-python chat.py
+python js_ai.py
