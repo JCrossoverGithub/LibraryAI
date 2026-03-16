@@ -1,126 +1,87 @@
-# LibraryAI
+# Personal Knowledge Assistant (LibraryAI)
 
-**LibraryAI** is a local, retrieval-augmented AI assistant for interacting with a personal document library. It allows a user to upload documents, semantically search them, ask natural-language questions, and combine retrieved document context with lightweight conversational memory.
+A local AI assistant for querying your documents, remembering important user-provided facts, and falling back to live web search when local context is not enough.
 
-The centerpiece of the project is **`js_ai.py`**, which turns the system into an interactive command-line assistant. Instead of being just a one-off PDF question-answering script, LibraryAI evolved into a more capable local assistant that supports:
+## Overview
 
-- semantic search over a Chroma vector database
-- persistent long-term chat memory
+LibraryAI started as a document-based RAG project for a personal library. It has since evolved into a more complete local assistant that combines:
+
+- semantic search over personal documents
+- persistent conversational memory
 - explicit fact storage
 - follow-up question reformulation
-- document upload from the chat interface
-- library management commands
-- memory-only and library-only retrieval modes
+- live web search fallback
+- direct document management from the CLI
 
-This project is intended to demonstrate practical experience with:
+The result is a stronger prototype for a **local personalized AI assistant**.
 
-- **retrieval-augmented generation (RAG)**
-- **vector databases**
-- **local LLM workflows**
-- **embedding-based search**
-- **CLI application design**
-- **iterative feature-driven development**
+## What the project does
 
----
+The assistant can answer questions using three different context sources:
 
-## Why I built this
+1. **Library context** — chunks retrieved from uploaded documents
+2. **Conversation memory** — saved facts and prior interactions
+3. **Live web search** — used directly with `-web` or automatically as a fallback
 
-I wanted to build a local AI tool that feels more like a usable system than a basic demo. Many document-chat projects stop at “upload a PDF and ask a question.” This project goes further by adding:
+This makes the system a hybrid of:
 
-- a persistent local knowledge store
-- a conversational interface
-- explicit memory controls
-- direct ingestion from the chat loop
-- multiple retrieval modes depending on the user’s intent
-
-The result is a stronger prototype for a real personal knowledge assistant: something closer to a “virtual library brain” than a simple document lookup script.
-
----
-
-## Core idea
-
-LibraryAI uses a **local vector database** to store embedded chunks of documents and retrieve the most relevant passages for a user’s question.
-
-In `js_ai.py`, the assistant also maintains a separate memory collection for:
-
-- facts the user explicitly asks it to remember
-- previous user queries
-- previous assistant responses
-
-When a user asks a question, the system:
-
-1. rewrites follow-up questions into a more specific standalone query
-2. searches past conversation memory
-3. searches the document library
-4. injects the retrieved context into a prompt
-5. generates an answer with a local Ollama-hosted model
-
-That makes the system a **hybrid of document retrieval + conversational memory**, rather than plain RAG alone.
-
----
-
-## Main file: `js_ai.py`
-
-`js_ai.py` is the primary application entry point and the most important file in the project.
-
-### What it does
-
-- connects to a local **Chroma** database
-- loads a **HuggingFace embedding model**
-- initializes an **Ollama LLM**
-- supports document upload for `.pdf`, `.txt`, and `.docx`
-- stores a second Chroma collection for chat memory
-- reformulates ambiguous follow-up questions into standalone search queries
-- retrieves relevant memory and library context
-- answers questions using retrieved context only
-- supports direct CLI commands for memory and library management
-
-### Current architecture
-
-The current `js_ai.py` uses:
-
-- **Chroma** for vector storage
-- **HuggingFace embeddings**
-- **Ollama** for local LLM inference
-- **LangChain prompt templates**
-- **PyPDFLoader / TextLoader / Docx2txtLoader**
-- **RecursiveCharacterTextSplitter**
-
----
+- document retrieval
+- long-term memory
+- local LLM generation
+- web-augmented answering
 
 ## Features
 
-### 1. Interactive local AI assistant
-The project runs as a command-line chatbot for querying a personal document library.
+- **Interactive CLI assistant** for asking questions naturally
+- **Local document ingestion** for `.pdf`, `.txt`, `.docx`, and `.doc`
+- **Semantic retrieval** using a local Chroma vector store
+- **Persistent memory** for:
+  - explicit user facts
+  - previous user questions
+  - previous assistant responses
+- **Follow-up query rewriting** to improve retrieval quality
+- **Retrieval routing**:
+  - combined memory + library search
+  - library-only search
+  - memory-only search
+  - web-only search
+- **Automatic web fallback** when local retrieval cannot answer
+- **Source transparency** after answers
+- **Library management** from the chat interface
 
-### 2. Local document ingestion
-Users can upload supported files directly from the chat interface instead of relying only on a separate ingestion script.
+## Architecture
 
-### 3. Semantic retrieval
-Questions are answered using semantically similar chunks retrieved from the vector database.
+### Core stack
 
-### 4. Persistent memory
-The assistant keeps a separate memory store for:
-- explicit user facts
-- prior user questions
-- prior assistant answers
+- **Python**
+- **Chroma** for vector storage
+- **Hugging Face embeddings**
+- **Ollama** for local LLM inference
+- **LangChain prompt pipelines**
+- **DuckDuckGo search**
+- **PyPDF / text / DOCX loaders**
+- **Recursive text chunking**
 
-### 5. Question reformulation
-Follow-up questions are rewritten into standalone search queries to improve retrieval quality.
+### Current runtime assumptions
 
-### 6. Retrieval routing
-The user can search:
-- both memory and library
-- only the library
-- only past conversation memory
+The current implementation uses:
 
-### 7. Source transparency
-The system prints the document sources used for retrieval after answering.
+- `BAAI/bge-large-en-v1.5` for embeddings
+- `qwen3-coder:30b` through Ollama (Interchangeable)
+- a local Chroma persistence directory at `./chroma_db`
+- CUDA for the current embedding model configuration
 
-### 8. Library management from the CLI
-The chat interface also supports listing, removing, and uploading documents.
+## How it works
 
----
+When a user asks a question, the assistant:
+
+1. rewrites the question into a standalone search query
+2. checks recent conversation context
+3. searches long-term chat memory
+4. searches the document library or live web results
+5. injects retrieved context into the QA prompt
+6. generates an answer with a local Ollama-hosted model
+7. stores the interaction back into memory when appropriate
 
 ## Commands
 
@@ -136,23 +97,78 @@ The chat interface also supports listing, removing, and uploading documents.
 
 | Command | Purpose |
 |---|---|
-| `-upload [path]` | Ingest a `.pdf`, `.txt`, or `.docx` file |
+| `-upload [path]` | Ingest a `.pdf`, `.txt`, `.docx`, or `.doc` file |
 | `-docs` | List all documents in the library |
-| `-remove [name]` | Delete a file from the library |
+| `-remove [name]` | Delete a document from the library |
 
-### Chat commands
+### Chat / retrieval commands
 
 | Command | Purpose |
 |---|---|
 | `-strict [query]` | Search only the library |
 | `-chat [query]` | Search only past conversations |
-| `-clear` | Clear the short-term recent-history buffer |
-| `-wipe` | Delete all long-term and short-term chat memory |
+| `-web [query]` | Search only the live internet |
+| `-clear` | Clear short-term recent chat memory |
+| `-wipe` | Delete all stored chat memory |
 | `exit` / `quit` | Close the application |
 
----
+## Setup
 
-## Example usage
+> Note: this project currently assumes a local Ollama setup and a configured Python environment.
+> A future version will include a `requirements.txt` or `pyproject.toml` for easier installation.
+
+### Recommended prerequisites
+
+- Python 3.10+
+- Ollama installed and running locally
+- the required Ollama model pulled locally
+- a CUDA-capable GPU if you keep the current embedding configuration
+
+### Run
 
 ```bash
 python js_ai.py
+```
+
+## Example workflow
+
+```text
+-upload my_notes.pdf
+-info I am focusing on distributed systems
+What have I told you about my interests?
+-strict What does the uploaded document say about vector databases?
+-web latest news on local LLM tooling
+```
+
+## Why I built this
+
+I wanted to build something more useful than a one question long "chat" utilizing knowledge from a PDF.
+Something that I will actually use when researching for my future projects. And that is exactly what this turned out to be.
+
+This project explores the combination of:
+
+- personal knowledge retrieval
+- persistent memory
+- local-first AI tooling
+- user-controlled document ingestion
+- practical CLI workflows
+
+It is meant to demonstrate applied experience with RAG, vector databases, local LLM pipelines, and AI assistant design.
+
+## Project status
+
+This is an actively evolving prototype. Current focus areas include:
+
+- improving setup and reproducibility
+- improving source formatting
+- making the assistant easier to configure
+- continuing the shift from virtual library tool to personal knowledge assistant
+
+## Future improvements
+
+- add a `requirements.txt` or `pyproject.toml`
+- add configuration for model names and device selection
+- add better source citation formatting
+- add a GUI or web interface
+- add ingestion metrics and document stats
+- improve memory controls and retrieval ranking
