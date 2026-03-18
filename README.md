@@ -19,9 +19,9 @@ The result is a stronger prototype for a **local personalized AI assistant**.
 
 The assistant can answer questions using three different context sources:
 
-1. **Library context** — chunks retrieved from uploaded documents
-2. **Conversation memory** — saved facts and prior interactions
-3. **Live web search** — used directly with `-web` or automatically as a fallback
+1. **Library context** - chunks retrieved from uploaded documents
+2. **Conversation memory** - saved facts and prior interactions
+3. **Live web search** - used directly with `-web` or automatically as a fallback
 
 This makes the system a hybrid of:
 
@@ -142,10 +142,13 @@ What have I told you about my interests?
 
 ## Why I built this
 
-I wanted to build something more useful than a one question long "chat" utilizing knowledge from a PDF.
-Something that I will actually use when researching for my future projects. And that is exactly what this turned out to be.
+This project started out as a local library/pdf AI assistant.
+I recently took linear algebra and I found when asking common AI sources to help me identify sections in readings/books I could read up on for the current topic I was learning, 90% of the time it completely hallucinated or would give me irrelevant answers.
+Same thing when I took a class on the meaning of life, and I had to look through many different books to find evidence to use in my essay. I decided to see if common AI would be able to help, and it couldn't.
+Then I read *Hands-On Large Language Models: Language Understanding and Generation* by Jay Alammar, and it sounded like there was an extremely easy solution to my problems. RAG.
+I built LibraryAI to test if it truly was this easy. Turns out it was. Once I had that working I became addicted to adding more features to see just how far I could take this project, and it turned into all of this.
 
-This project explores the combination of:
+This project now explores the combination of:
 
 - personal knowledge retrieval
 - persistent memory
